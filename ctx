@@ -19,6 +19,21 @@ die() { echo "ctx: $*" >&2; exit 1; }
 command -v gcloud >/dev/null 2>&1 || die "gcloud not found on PATH"
 command -v fzf >/dev/null 2>&1 || die "fzf not found on PATH"
 
+# Cache network lists. Return the cached value at once, refresh in the
+# background. Falls back to a plain run if bkt is absent. --scope keeps lists
+# for different accounts or projects apart.
+CACHE_TTL=24h
+CACHE_STALE=1m
+cached() {
+  local scope="$1"; shift
+  if command -v bkt >/dev/null 2>&1; then
+    bkt --ttl="$CACHE_TTL" --stale="$CACHE_STALE" --discard-failures \
+      --scope="$scope" -- "$@"
+  else
+    "$@"
+  fi
+}
+
 # Pick a value with fzf. Exits cleanly if the user cancels.
 pick() {
   local header="$1"
@@ -66,11 +81,14 @@ session_alive "$account" || reauth "$account"
 gcloud config set account "$account" >/dev/null 2>&1
 
 # 3. Pick project for that account.
-project="$(gcloud projects list --format='value(projectId)' --sort-by=projectId | pick 'project')"
+project="$(cached "$account" \
+  gcloud projects list --account="$account" \
+  --format='value(projectId)' --sort-by=projectId | pick 'project')"
 gcloud config set project "$project" >/dev/null 2>&1
 
 # 4. Pick cluster, refined by project. Keep name and location together.
-cluster_line="$(gcloud container clusters list --project "$project" \
+cluster_line="$(cached "$project" \
+  gcloud container clusters list --project "$project" \
   --format='value(name,location)' | column -t | pick 'cluster')"
 cluster_name="$(awk '{print $1}' <<<"$cluster_line")"
 cluster_location="$(awk '{print $2}' <<<"$cluster_line")"

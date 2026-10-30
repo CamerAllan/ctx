@@ -14,11 +14,16 @@ live.
 5. Set the active gcloud config and fetch the cluster credentials, which sets
    the current kube context.
 
+The project and cluster lists come from a `bkt` cache, so the menus open at
+once. `bkt` refreshes the cache in the background. A refresh does not disrupt
+the open menu, because each menu reads a complete cached list.
+
 ## Requirements
 
 - `gcloud` with the `gke-gcloud-auth-plugin` component.
 - `fzf`.
 - `python3` (reads the Chrome profile map).
+- `bkt` (optional, caches the project and cluster lists for instant menus).
 - Google Chrome, with one profile signed in per GCP account.
 - macOS (`open` launches Chrome).
 
