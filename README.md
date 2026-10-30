@@ -7,8 +7,8 @@ live.
 ## What it does
 
 1. Pick a GCP account (from `gcloud auth list`).
-2. Check the account session. If it is expired, open a Terminal.app window with
-   `gcloud auth login` and wait until the login completes.
+2. Check the account session. If it is expired, run `gcloud auth login` and open
+   the Chrome profile that is signed in as that account.
 3. Pick a project (from `gcloud projects list`).
 4. Pick a cluster, refined by the chosen project.
 5. Set the active gcloud config and fetch the cluster credentials, which sets
@@ -18,7 +18,9 @@ live.
 
 - `gcloud` with the `gke-gcloud-auth-plugin` component.
 - `fzf`.
-- macOS (the login window uses Terminal.app through `osascript`).
+- `python3` (reads the Chrome profile map).
+- Google Chrome, with one profile signed in per GCP account.
+- macOS (`open` launches Chrome).
 
 ## Install
 
