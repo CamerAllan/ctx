@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+#
+# ctx - select a GCP account, project, and GKE cluster in quick succession,
+# then set the active gcloud config and kube context, re-authing only if needed.
+#
+set -euo pipefail
+
+REAUTH_TIMEOUT=180   # max seconds to wait for a browser login
+POLL_INTERVAL=2      # seconds between session checks
+
+die() { echo "ctx: $*" >&2; exit 1; }
+
+command -v gcloud >/dev/null 2>&1 || die "gcloud not found on PATH"
+command -v fzf >/dev/null 2>&1 || die "fzf not found on PATH"
+
+# Pick a value with fzf. Exits cleanly if the user cancels.
+pick() {
+  local header="$1"
+  local choice
+  choice="$(fzf --height=40% --reverse --prompt="$header> " --header="$header")" || true
+  [[ -n "$choice" ]] || { echo "ctx: cancelled" >&2; exit 130; }
+  printf '%s\n' "$choice"
+}
+
+# True if the account has a live session.
+session_alive() {
+  gcloud auth print-access-token --account="$1" >/dev/null 2>&1
+}
+
+# Pop a Terminal.app window to log in, then wait for the session to go live.
+reauth() {
+  local account="$1"
+  echo "ctx: session for $account is expired, opening login window..." >&2
+  osascript >/dev/null 2>&1 \
+    -e "tell application \"Terminal\" to do script \"gcloud auth login $account\"" \
+    -e 'tell application "Terminal" to activate'
+
+  local waited=0
+  while ! session_alive "$account"; do
+    sleep "$POLL_INTERVAL"
+    waited=$((waited + POLL_INTERVAL))
+    if (( waited >= REAUTH_TIMEOUT )); then
+      die "timed out after ${REAUTH_TIMEOUT}s waiting for login"
+    fi
+  done
+  echo "ctx: login complete" >&2
+}
+
+# 1. Pick account (local list, fast).
+account="$(gcloud auth list --format='value(account)' | pick 'account')"
+
+# 2. Make the account live before any network calls.
+session_alive "$account" || reauth "$account"
+gcloud config set account "$account" >/dev/null 2>&1
+
+# 3. Pick project for that account.
+project="$(gcloud projects list --format='value(projectId)' --sort-by=projectId | pick 'project')"
+gcloud config set project "$project" >/dev/null 2>&1
+
+# 4. Pick cluster, refined by project. Keep name and location together.
+cluster_line="$(gcloud container clusters list --project "$project" \
+  --format='value(name,location)' | column -t | pick 'cluster')"
+cluster_name="$(awk '{print $1}' <<<"$cluster_line")"
+cluster_location="$(awk '{print $2}' <<<"$cluster_line")"
+
+# 5. Set the kube context. The GKE plugin uses the now-live account.
+gcloud container clusters get-credentials "$cluster_name" \
+  --location "$cluster_location" --project "$project"
+
+echo "ctx: ready -> $account / $project / $cluster_name ($cluster_location)"
