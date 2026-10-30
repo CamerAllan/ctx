@@ -16,9 +16,6 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 die() { echo "ctx: $*" >&2; exit 1; }
 
-command -v gcloud >/dev/null 2>&1 || die "gcloud not found on PATH"
-command -v fzf >/dev/null 2>&1 || die "fzf not found on PATH"
-
 # Cache network lists for speed only, not to save network calls. Return the
 # cached value at once, and always refresh in the background (stale=0s), so new
 # clusters or projects show up on the next run. Falls back to a plain run if bkt
@@ -39,6 +36,7 @@ cached() {
 # menu kind and scope, newest key on the first line.
 RECENT_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ctx"
 RECENT_LIMIT=50
+SETUP_MARKER="$RECENT_DIR/setup-ok"
 
 recent_file() {
   mkdir -p "$RECENT_DIR"
@@ -107,6 +105,87 @@ reauth() {
   echo "ctx: session for $account is expired, logging in via Chrome '$profile'..." >&2
   CHROME_PROFILE="$profile" BROWSER="$SCRIPT_DIR/chrome-open" gcloud auth login "$account"
 }
+
+# Check the tools and accounts this needs, and say how to fix what is missing.
+# Returns non-zero if anything required is absent.
+doctor() {
+  local ok=0 green=$'\033[32m' red=$'\033[31m' dim=$'\033[2m' off=$'\033[0m'
+  [[ -t 1 ]] || { green=""; red=""; dim=""; off=""; }
+  pass() { printf '  %s✓%s %s\n' "$green" "$off" "$1"; }
+  fail() { printf '  %s✗%s %s\n     %sfix: %s%s\n' "$red" "$off" "$1" "$dim" "$2" "$off"; ok=1; }
+
+  echo "ctx setup check"
+  echo
+  echo "tools"
+  command -v gcloud >/dev/null 2>&1 \
+    && pass "gcloud" \
+    || fail "gcloud" "brew install --cask google-cloud-sdk"
+  command -v fzf >/dev/null 2>&1 \
+    && pass "fzf" \
+    || fail "fzf" "brew install fzf"
+  command -v python3 >/dev/null 2>&1 \
+    && pass "python3" \
+    || fail "python3" "xcode-select --install"
+  command -v bkt >/dev/null 2>&1 \
+    && pass "bkt" \
+    || printf '  %s-%s bkt (optional, makes menus instant)\n     %sadd: brew install bkt%s\n' \
+         "$dim" "$off" "$dim" "$off"
+  local sdk_bin
+  if command -v gke-gcloud-auth-plugin >/dev/null 2>&1; then
+    pass "gke-gcloud-auth-plugin"
+  else
+    sdk_bin="$(gcloud info --format='value(installation.sdk_root)' 2>/dev/null)/bin"
+    if [[ -x "$sdk_bin/gke-gcloud-auth-plugin" ]]; then
+      fail "gke-gcloud-auth-plugin is installed but off the PATH" \
+        "add to your shell profile: export PATH=\"$sdk_bin:\$PATH\""
+    else
+      fail "gke-gcloud-auth-plugin" "gcloud components install gke-gcloud-auth-plugin"
+    fi
+  fi
+  [[ -d "/Applications/Google Chrome.app" ]] \
+    && pass "Google Chrome" \
+    || fail "Google Chrome" "brew install --cask google-chrome"
+
+  echo
+  echo "accounts"
+  local accounts
+  accounts="$(gcloud auth list --format='value(account)' 2>/dev/null || true)"
+  if [[ -z "$accounts" ]]; then
+    fail "no gcloud accounts" "gcloud auth login"
+  else
+    local acct profile
+    while read -r acct; do
+      [[ -n "$acct" ]] || continue
+      profile="$(chrome_profile_dir "$acct" 2>/dev/null || true)"
+      if [[ -n "$profile" ]]; then
+        pass "$acct ${dim}-> Chrome '$profile'${off}"
+      else
+        fail "$acct has no Chrome profile" \
+          "open Chrome, add a profile, and sign in as $acct"
+      fi
+    done <<<"$accounts"
+  fi
+
+  echo
+  if (( ok == 0 )); then
+    mkdir -p "$RECENT_DIR" && touch "$SETUP_MARKER"
+    echo "All set. Run ctx to pick an account, project, and cluster."
+  else
+    echo "Fix the items above, then run: ctx doctor"
+  fi
+  return $ok
+}
+
+if [[ "${1:-}" == "doctor" ]]; then
+  doctor
+  exit $?
+fi
+
+# On the very first run, check the setup before anything else.
+if [[ ! -f "$SETUP_MARKER" ]]; then
+  doctor || exit 1
+  echo
+fi
 
 # 1. Pick account (local list, fast).
 account="$(gcloud auth list --format='value(account)' | pick 'account')"
