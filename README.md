@@ -3,6 +3,8 @@
 Pick a GCP account, project, and GKE cluster in one go. Your gcloud config and
 kube context end up set, and an expired account logs in again on the way.
 
+Tested on macOS only.
+
 ## Install
 
 ```sh
