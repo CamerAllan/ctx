@@ -19,11 +19,12 @@ die() { echo "ctx: $*" >&2; exit 1; }
 command -v gcloud >/dev/null 2>&1 || die "gcloud not found on PATH"
 command -v fzf >/dev/null 2>&1 || die "fzf not found on PATH"
 
-# Cache network lists. Return the cached value at once, refresh in the
-# background. Falls back to a plain run if bkt is absent. --scope keeps lists
-# for different accounts or projects apart.
+# Cache network lists for speed only, not to save network calls. Return the
+# cached value at once, and always refresh in the background (stale=0s), so new
+# clusters or projects show up on the next run. Falls back to a plain run if bkt
+# is absent. --scope keeps lists for different accounts or projects apart.
 CACHE_TTL=24h
-CACHE_STALE=1m
+CACHE_STALE=0s
 cached() {
   local scope="$1"; shift
   if command -v bkt >/dev/null 2>&1; then

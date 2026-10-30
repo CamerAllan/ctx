@@ -15,8 +15,9 @@ live.
    the current kube context.
 
 The project and cluster lists come from a `bkt` cache, so the menus open at
-once. `bkt` refreshes the cache in the background. A refresh does not disrupt
-the open menu, because each menu reads a complete cached list.
+once. Every run also refreshes the cache in the background, so a new project or
+cluster shows up on the next run. A refresh does not disrupt the open menu,
+because each menu reads a complete cached list.
 
 ## Requirements
 
