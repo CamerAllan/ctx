@@ -13,6 +13,13 @@ cd ctx && ./install.sh
 Run `ctx`. The first run checks your setup and tells you how to fix anything
 missing. Run `ctx doctor` any time to check again.
 
+## Menus
+
+Each menu lists your most recent choices first, so the usual ones stay at the
+top. The project and cluster lists come from a cache, so the menus open at
+once. Every run refreshes that cache in the background, so a new project or
+cluster appears on the next run.
+
 ## Chrome profiles
 
 Each GCP account needs a Chrome profile signed in as that account. `ctx` opens
