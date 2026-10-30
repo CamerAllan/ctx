@@ -6,8 +6,8 @@ kube context end up set, and an expired account logs in again on the way.
 ## Install
 
 ```sh
-git clone <this-repo> ~/Personal/ctx
-~/Personal/ctx/install.sh
+git clone git@github.com:CamerAllan/ctx.git
+cd ctx && ./install.sh
 ```
 
 Run `ctx`. The first run checks your setup and tells you how to fix anything
