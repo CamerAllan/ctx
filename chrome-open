@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#
+# chrome-open - open a URL in a specific Chrome profile.
+# Used as the BROWSER for `gcloud auth login`. Reads the profile directory from
+# the CHROME_PROFILE environment variable. The URL is the first argument.
+#
+exec open -na "Google Chrome" --args --profile-directory="$CHROME_PROFILE" "$1"

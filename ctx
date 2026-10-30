@@ -5,8 +5,14 @@
 #
 set -euo pipefail
 
-REAUTH_TIMEOUT=180   # max seconds to wait for a browser login
-POLL_INTERVAL=2      # seconds between session checks
+# Resolve the real script directory, following symlinks, to find chrome-open.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 die() { echo "ctx: $*" >&2; exit 1; }
 
@@ -27,23 +33,29 @@ session_alive() {
   gcloud auth print-access-token --account="$1" >/dev/null 2>&1
 }
 
-# Pop a Terminal.app window to log in, then wait for the session to go live.
+# Find the Chrome profile directory whose signed-in user matches the account.
+chrome_profile_dir() {
+  python3 - "$1" <<'PY'
+import json, os, sys
+acct = sys.argv[1].lower()
+p = os.path.expanduser("~/Library/Application Support/Google/Chrome/Local State")
+with open(p) as f:
+    d = json.load(f)
+for dirn, meta in d.get("profile", {}).get("info_cache", {}).items():
+    if meta.get("user_name", "").lower() == acct:
+        print(dirn)
+        break
+PY
+}
+
+# Log in interactively, opening Chrome with the profile that matches the account.
 reauth() {
   local account="$1"
-  echo "ctx: session for $account is expired, opening login window..." >&2
-  osascript >/dev/null 2>&1 \
-    -e "tell application \"Terminal\" to do script \"gcloud auth login $account\"" \
-    -e 'tell application "Terminal" to activate'
-
-  local waited=0
-  while ! session_alive "$account"; do
-    sleep "$POLL_INTERVAL"
-    waited=$((waited + POLL_INTERVAL))
-    if (( waited >= REAUTH_TIMEOUT )); then
-      die "timed out after ${REAUTH_TIMEOUT}s waiting for login"
-    fi
-  done
-  echo "ctx: login complete" >&2
+  local profile
+  profile="$(chrome_profile_dir "$account")"
+  [[ -n "$profile" ]] || die "no Chrome profile signed in as $account"
+  echo "ctx: session for $account is expired, logging in via Chrome '$profile'..." >&2
+  CHROME_PROFILE="$profile" BROWSER="$SCRIPT_DIR/chrome-open" gcloud auth login "$account"
 }
 
 # 1. Pick account (local list, fast).
