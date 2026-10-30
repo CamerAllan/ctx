@@ -24,7 +24,7 @@ command -v fzf >/dev/null 2>&1 || die "fzf not found on PATH"
 # clusters or projects show up on the next run. Falls back to a plain run if bkt
 # is absent. --scope keeps lists for different accounts or projects apart.
 CACHE_TTL=24h
-CACHE_STALE=0s
+CACHE_STALE=1s
 cached() {
   local scope="$1"; shift
   if command -v bkt >/dev/null 2>&1; then
@@ -35,12 +35,46 @@ cached() {
   fi
 }
 
-# Pick a value with fzf. Exits cleanly if the user cancels.
+# Most recently chosen items come first in each menu. One history file per
+# menu kind and scope, newest key on the first line.
+RECENT_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ctx"
+RECENT_LIMIT=50
+
+recent_file() {
+  mkdir -p "$RECENT_DIR"
+  printf '%s/%s.recent' "$RECENT_DIR" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')"
+}
+
+# Reorder stdin so keys listed in the history file come first, in history
+# order. The key is the first whitespace-separated field of each line.
+by_recency() {
+  awk -v hist="$1" '
+    BEGIN {
+      n = 0
+      while ((getline line < hist) > 0) if (line != "") rank[line] = ++n
+    }
+    { key = $1; order = rank[key] ? rank[key] : n + NR; keep[order] = $0; seen[order] = 1 }
+    END { for (i = 1; i <= n + NR; i++) if (seen[i]) print keep[i] }
+  '
+}
+
+remember() {
+  local hist="$1" key="$2" tmp
+  tmp="$(mktemp)"
+  { printf '%s\n' "$key"; grep -vxF "$key" "$hist" 2>/dev/null || true; } \
+    | head -n "$RECENT_LIMIT" > "$tmp"
+  mv "$tmp" "$hist"
+}
+
+# Pick a value with fzf, newest choices first. Exits cleanly if cancelled.
 pick() {
-  local header="$1"
-  local choice
-  choice="$(fzf --height=40% --reverse --prompt="$header> " --header="$header")" || true
+  local header="$1" hist choice
+  hist="$(recent_file "${2:-$1}")"
+  touch "$hist"
+  choice="$(by_recency "$hist" \
+    | fzf --height=40% --reverse --no-sort --prompt="$header> " --header="$header")" || true
   [[ -n "$choice" ]] || { echo "ctx: cancelled" >&2; exit 130; }
+  remember "$hist" "$(awk '{print $1}' <<<"$choice")"
   printf '%s\n' "$choice"
 }
 
@@ -84,13 +118,13 @@ gcloud config set account "$account" >/dev/null 2>&1
 # 3. Pick project for that account.
 project="$(cached "$account" \
   gcloud projects list --account="$account" \
-  --format='value(projectId)' --sort-by=projectId | pick 'project')"
+  --format='value(projectId)' --sort-by=projectId | pick 'project' "project-$account")"
 gcloud config set project "$project" >/dev/null 2>&1
 
 # 4. Pick cluster, refined by project. Keep name and location together.
 cluster_line="$(cached "$project" \
   gcloud container clusters list --project "$project" \
-  --format='value(name,location)' | column -t | pick 'cluster')"
+  --format='value(name,location)' | column -t | pick 'cluster' "cluster-$project")"
 cluster_name="$(awk '{print $1}' <<<"$cluster_line")"
 cluster_location="$(awk '{print $2}' <<<"$cluster_line")"
 

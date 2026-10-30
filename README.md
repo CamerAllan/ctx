@@ -16,7 +16,8 @@ live.
 
 The project and cluster lists come from a `bkt` cache, so the menus open at
 once. Every run also refreshes the cache in the background, so a new project or
-cluster shows up on the next run. A refresh does not disrupt the open menu,
+cluster shows up on the next run. Each menu lists the most recently chosen
+items first. A refresh does not disrupt the open menu,
 because each menu reads a complete cached list.
 
 ## Requirements
